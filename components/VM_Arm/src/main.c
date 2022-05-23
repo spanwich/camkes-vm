@@ -807,6 +807,7 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
             ZF_LOGE("Couldn't generate DTB (%d)", err);
             return -1;
         }
+        fdt_dump_blob(gen_dtb_buf);
         printf("Loading Generated DTB\n");
         vm_ram_mark_allocated(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf));
         vm_ram_touch(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf), load_generated_dtb,

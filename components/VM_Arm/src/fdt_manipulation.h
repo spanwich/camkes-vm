@@ -34,3 +34,6 @@ int fdt_generate_chosen_node(void *fdt, const char *stdout_path, const char *boo
 * @return -1 on error, 0 otherwise
 */
 int fdt_append_chosen_node_with_initrd_info(void *fdt, uintptr_t base, size_t size);
+
+
+void fdt_dump_blob(void *fdt);
