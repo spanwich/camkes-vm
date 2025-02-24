@@ -84,8 +84,19 @@ int start_extra_frame_caps;
 int VM_PRIO = 100;
 int NUM_VCPUS = 1;
 
-#define IRQSERVER_PRIO      (VM_PRIO + 1)
-#define IRQ_MESSAGE_LABEL   0xCAFE
+// IRQs are sent to the bound notification of the VMM thread.
+// Start allocating IRQs at the 2nd bit from the top and work
+// down until encountering bits declared in `global_endpoint_mask_DEF`.
+// When an IRQ is received, the IRQ number is looked up via the irq_nums
+// array, and when an IRQ is acknowledged by the VM the cap to ack is
+// looked up in the irq_caps array.
+// FIXME: There are 28 bits on 32-bit, the top bit is used for distinguishing
+// Notification vs endpoint messages and so we can only use bits 26 and down.
+// On 64-bit systems, this should support 62 bits.
+#define IRQ_BADGE_TOP (26)
+seL4_CPtr irq_caps[seL4_BadgeBits];
+int irq_nums[seL4_BadgeBits];
+int irq_badge_next_free = IRQ_BADGE_TOP;
 
 vka_t _vka;
 simple_t _simple;
@@ -403,30 +414,6 @@ static int vmm_init(const vm_config_t *vm_config)
     err = camkes_ps_malloc_ops(&_io_ops.malloc_ops);
     assert(!err);
 
-    /* Create an IRQ server */
-    _irq_server = irq_server_new(vspace, vka, IRQSERVER_PRIO,
-                                 simple, simple_get_cnode(simple), fault_ep_obj.cptr,
-                                 IRQ_MESSAGE_LABEL, 256, &_io_ops.malloc_ops);
-    assert(_irq_server);
-
-    int num_pt_irqs = ARRAY_SIZE(linux_pt_irqs);
-
-    if (camkes_dtb_get_irqs) {
-        int num_dtb_irqs = 0;
-        int *dtb_irqs = camkes_dtb_get_irqs(&num_dtb_irqs);
-        num_pt_irqs += num_dtb_irqs;
-    }
-
-    /* Create threads for the IRQ server */
-    size_t num_irq_threads = DIV_ROUND_UP(num_pt_irqs, seL4_BadgeBits);
-
-    for (int i = 0; i < num_irq_threads; i++) {
-        /* Create new IRQ server threads and have them allocate notifications for us */
-        thread_id_t t_id = irq_server_thread_new(_irq_server, seL4_CapNull,
-                                                 0, -1);
-        assert(t_id >= 0);
-    }
-
     return 0;
 }
 
@@ -495,34 +482,26 @@ static void restart_event(void *arg)
 
 static void do_irq_server_ack(vm_vcpu_t *vcpu, int irq, void *token)
 {
-    assert(token);
-    irq_token_t irq_token = token;
-    /* If the acknowledge function pointer is NULL, this means that the actual
-     * interrupt has not arrived/we have not handled it. So we defer it for
-     * later.
-     *
-     * NOTE: this only happens with the arch timer, in that we receive
-     * an EOI from Linux before we inject the VIRQ */
-    if (irq_token->acknowledge_fn && irq_token->ack_data) {
-        int err = irq_token->acknowledge_fn(irq_token->ack_data);
-        assert(!err);
-        irq_token->ack_data = NULL;
-    }
+    assert(("valid token", token));
+    seL4_Word badge_index = (seL4_Word) token;
+    assert(("Badge is in range", badge_index < seL4_BadgeBits));
+    seL4_IRQHandler_Ack(irq_caps[badge_index]);
 }
 
-static void irq_handler(void *data, ps_irq_acknowledge_fn_t acknowledge_fn, void *ack_data)
+static int irq_handler(vm_t *vm, seL4_Word badge)
 {
     /* We don't actually acknowledge the IRQ yet, this is done later when we update the VGIC's state. */
-    assert(data);
-    irq_token_t token = data;
-    /* Fill in the rest of the details */
-    token->acknowledge_fn = acknowledge_fn;
-    token->ack_data = ack_data;
-    int err;
-    err = vm_inject_irq(token->vm->vcpus[BOOT_VCPU], token->virq);
-    if (err) {
-        ZF_LOGW("IRQ %d Dropped", token->virq);
+    int delivered = 0;
+    for (int i = IRQ_BADGE_TOP; i > irq_badge_next_free; i--) {
+        if (BIT(i) & badge) {
+            int err = vm_inject_irq(vm->vcpus[BOOT_VCPU], irq_nums[i]);
+            if (err) {
+                ZF_LOGE("IRQ %d Dropped", irq_nums[i]);
+            }
+            delivered++;
+        }
     }
+    return delivered;
 }
 
 
@@ -556,35 +535,49 @@ static int install_vm_devices(vm_t *vm, const vm_config_t *vm_config)
 
 }
 
-static int route_irq(int irq_num, vm_vcpu_t *vcpu, irq_server_t *irq_server)
+static int route_irq(int irq_num, vm_vcpu_t *vcpu, seL4_Word badge_index)
 {
-    ps_irq_t irq = { .type = PS_INTERRUPT, .irq = { .number = irq_num }};
-    irq_callback_fn_t handler = NULL;
-    if (get_custom_irq_handler) {
-        handler = get_custom_irq_handler(irq);
-    }
-    if (handler == NULL) {
-        handler = &irq_handler;
-    }
 
-    irq_token_t token = calloc(1, sizeof(struct irq_token));
-    if (token == NULL) {
-        return -1;
-    }
-
-    int err = vm_register_irq(vcpu, irq.irq.number, &do_irq_server_ack, token);
+    assert(("More IRQs than available badge bits",
+        !((1llu << badge_index) & global_endpoint_mask_DEF)));
+    cspacepath_t irq_cslot;
+    int err = vka_cspace_alloc_path(vcpu->vm->vka, &irq_cslot);
     if (err == -1) {
         return -1;
     }
 
-    token->virq = irq.irq.number;
-    token->irq = irq;
-    token->vm = vcpu->vm;
 
-    irq_id_t irq_id = irq_server_register_irq(irq_server, irq, handler, token);
-    if (irq_id < 0) {
+    err = vm_simple_get_irq(NULL, irq_num, irq_cslot.root, irq_cslot.capPtr, irq_cslot.capDepth);
+    if (err != seL4_NoError) {
         return -1;
     }
+
+    cspacepath_t notification_path;
+    cspacepath_t irq_notification;
+
+    vka_cspace_make_path(vcpu->vm->vka, notification_ready_notification(), &notification_path);
+
+    err = vka_cspace_alloc_path(vcpu->vm->vka, &irq_notification);
+    if (err == -1) {
+        return -1;
+    }
+
+    err = vka_cnode_mint(&irq_notification, &notification_path, seL4_AllRights, (1llu << badge_index) | (1llu<<63));
+    if (err != seL4_NoError) {
+        return -1;
+    }
+
+    err = seL4_IRQHandler_SetNotification(irq_cslot.capPtr, irq_notification.capPtr);
+    if (err != seL4_NoError) {
+        return -1;
+    }
+
+    err = vm_register_irq(vcpu, irq_num, &do_irq_server_ack, (void*)badge_index);
+    if (err == -1) {
+        return -1;
+    }
+    irq_caps[badge_index] = irq_cslot.capPtr;
+    irq_nums[badge_index] = irq_num;
 
     return 0;
 }
@@ -592,27 +585,32 @@ static int route_irq(int irq_num, vm_vcpu_t *vcpu, irq_server_t *irq_server)
 static int route_irqs(vm_vcpu_t *vcpu, irq_server_t *irq_server)
 {
     int err;
+
+    seL4_Word badge = IRQ_BADGE_TOP; // Start from the top badge space -1;
     for (int i = 0; i < ARRAY_SIZE(linux_pt_irqs); i++) {
         int irq_num = linux_pt_irqs[i];
-        err = route_irq(irq_num, vcpu, irq_server);
+        err = route_irq(irq_num, vcpu, badge);
         if (err) {
             return err;
         }
+        badge--;
     }
     if (camkes_dtb_get_irqs) {
         int num_dtb_irqs = 0;
         int *dtb_irqs = camkes_dtb_get_irqs(&num_dtb_irqs);
         for (int i = 0; i < num_dtb_irqs; i++) {
             int irq_num = dtb_irqs[i];
-            err = route_irq(irq_num, vcpu, irq_server);
+            err = route_irq(irq_num, vcpu, badge);
             if (err) {
                 return err;
             }
+            badge--;
         }
     }
+    assert(("Badge not overflowed", badge < seL4_BadgeBits));
+    irq_badge_next_free = badge;
     return 0;
 }
-
 static int vm_dtb_init(vm_t *vm, const vm_config_t *vm_config)
 {
     int err;
@@ -870,18 +868,18 @@ int register_async_event_handler(seL4_Word badge, async_event_handler_fn_t callb
 static int handle_async_event(vm_t *vm, seL4_Word badge, seL4_MessageInfo_t tag, void *cookie)
 {
     seL4_Word label = seL4_MessageInfo_get_label(tag);
-    if (badge == 0) {
-        if (label == IRQ_MESSAGE_LABEL) {
-            irq_server_handle_irq_ipc(_irq_server, tag);
-        } else {
-            ZF_LOGE("Unknown label (%"SEL4_PRId_word")", label);
-        }
-#ifdef FEATURE_VUSB
-    } else if (badge == VUSB_NBADGE) {
-        vusb_notify();
-#endif
-    } else {
-        bool found_handler = false;
+
+    // sender_badge >= MIN_VCPU_BADGE && sender_badge <= MAX_VCPU_BADGE
+    // is reserved for inside the vmm library.
+    //
+    // first check for if it is irq
+    bool found_handler = false;
+    if (badge & ~global_endpoint_mask) {
+        found_handler = 0 < irq_handler(vm, badge);
+    }
+
+    if (badge & global_endpoint_mask) {
+
         for (int i = 0; i < callback_idx; i++) {
             assert(callback_arr);
             if ((badge & callback_arr[i].badge) == callback_arr[i].badge) {
@@ -889,9 +887,10 @@ static int handle_async_event(vm_t *vm, seL4_Word badge, seL4_MessageInfo_t tag,
                 found_handler = true;
             }
         }
-        if (!found_handler) {
-            ZF_LOGE("Unknown badge (%"SEL4_PRId_word")", badge);
-        }
+    }
+
+    if (!found_handler) {
+        ZF_LOGE("Unknown badge (%d)", badge);
     }
     return 0;
 }

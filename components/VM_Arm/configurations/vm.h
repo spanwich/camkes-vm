@@ -68,6 +68,7 @@
     attribute int num_extra_frame_caps; \
     attribute int extra_frame_map_address; \
     attribute int heap_size = 0x5300000; \
+    attribute uint64_t global_endpoint_mask = 0; \
     attribute { \
         string ram_base; \
         string ram_paddr_base; \
