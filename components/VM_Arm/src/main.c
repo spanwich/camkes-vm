@@ -758,11 +758,8 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
 
     /* Load kernel */
     printf("Loading Kernel: \'%s\'\n", vm_config->files.kernel);
-    guest_kernel_image_t kernel_image_info;
-    err = vm_load_guest_kernel(vm, vm_config->files.kernel, vm_config->ram.base,
-                               0, &kernel_image_info);
-    entry = kernel_image_info.kernel_image.load_paddr;
-    if (!entry || err) {
+    entry = vm_config->entry_addr;
+    if (!entry) {
         return -1;
     }
 
@@ -777,19 +774,16 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
     }
 
     /* Attempt to load initrd if provided */
-    guest_image_t initrd_image;
     if (vm_config->provide_initrd) {
         printf("Loading Initrd: \'%s\'\n", vm_config->files.initrd);
-        err = vm_load_guest_module(vm, vm_config->files.initrd,
-                                   vm_config->initrd_addr, 0, &initrd_image);
-        void *initrd = (void *)initrd_image.load_paddr;
-        if (!initrd || err) {
+        void *initrd = (void *)vm_config->initrd_addr;
+        if (!initrd) {
             return -1;
         }
         if (vm_config->generate_dtb) {
             err = fdt_append_chosen_node_with_initrd_info(gen_dtb_buf,
                                                           vm_config->initrd_addr,
-                                                          initrd_image.size);
+                                                          vm_config->files.initrd_size);
             if (err) {
                 ZF_LOGE("Couldn't generate chosen_node_with_initrd_info (%d)", err);
                 return -1;

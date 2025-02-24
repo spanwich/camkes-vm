@@ -69,7 +69,9 @@ const vm_config_t vm_config = {
 
     .files = {
         .kernel = "/*? vm_image_config.get('kernel_name') ?*/",
+        .kernel_size = /*? vm_image_config.get('kernel_image_size') ?*/,
         .initrd = "/*? vm_image_config.get('initrd_name', "") ?*/",
+        .initrd_size = /*? vm_image_config.get('initrd_size') ?*/,
         .dtb = "/*? vm_image_config.get('dtb_name', "") ?*/",
         .dtb_base = "/*? vm_image_config.get('dtb_base_name', "") ?*/",
     },
@@ -116,6 +118,8 @@ const vm_config_t vm_config = {
         .initrd = "/*? linux_image_config.get('initrd_name') ?*/",
         .dtb = "/*? linux_image_config.get('dtb_name') ?*/",
         .dtb_base = "/*? linux_image_config.get('dtb_base_name') ?*/",
+        .kernel_size = /*? linux_image_config.get('linux_image_size') ?*/,
+        .initrd_size = /*? linux_image_config.get('initrd_size') ?*/,
     },
 
     .kernel_bootcmdline = "/*? linux_image_config.get('linux_bootcmdline') ?*/",

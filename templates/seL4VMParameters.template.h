@@ -31,7 +31,9 @@ typedef struct {
 
     struct {
         char const *kernel;
+        uintptr_t kernel_size;
         char const *initrd;
+        uintptr_t initrd_size;
         char const *dtb;
         char const *dtb_base;
     } files;
