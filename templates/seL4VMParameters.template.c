@@ -30,6 +30,7 @@ const vm_config_t vm_config = {
         .phys_base = /*? vm_address_config.get('ram_paddr_base') ?*/,
         .base = /*? vm_address_config.get('ram_base') ?*/,
         .size = /*? vm_address_config.get('ram_size') ?*/,
+        .page_size_bits = /*? vm_address_config.get('ram_page_size_bits') ?*/,
     },
 
     .dtb_addr = /*? vm_address_config.get('dtb_addr') ?*/,
@@ -50,6 +51,7 @@ const vm_config_t vm_config = {
         .phys_base = /*? linux_address_config.get('linux_ram_paddr_base') ?*/,
         .base = /*? linux_address_config.get('linux_ram_base') ?*/,
         .size = /*? linux_address_config.get('linux_ram_size') ?*/,
+        .page_size_bits = /*? linux_address_config.get('linux_ram_page_size_bits') ?*/,
     },
 
     .dtb_addr = /*? linux_address_config.get('dtb_addr') ?*/,

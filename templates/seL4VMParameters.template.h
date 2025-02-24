@@ -17,6 +17,7 @@ typedef struct {
         uintptr_t phys_base;
         uintptr_t base;
         size_t size;
+        size_t page_size_bits;
     } ram;
 
     bool provide_initrd;

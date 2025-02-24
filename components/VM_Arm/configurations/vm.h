@@ -53,6 +53,7 @@
     DEF_TK1DEVICEFWD \
     DEF_KERNELARMPLATFORM_EXYNOS5410 \
     maybe consumes restart restart_event; \
+    dataport Buf memdev; \
     has semaphore vm_sem; \
     maybe uses Batch batch; \
     maybe uses PutChar guest_putchar; \

@@ -749,7 +749,7 @@ static int load_generated_dtb(vm_t *vm, uintptr_t paddr, void *addr, size_t size
     memcpy(addr, cookie + offset, size);
     return 0;
 }
-
+uintptr_t vm_paddr_to_host_vaddr(uintptr_t paddr);
 static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
 {
     seL4_Word entry;
@@ -801,9 +801,7 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
         }
         fdt_dump_blob(gen_dtb_buf);
         printf("Loading Generated DTB\n");
-        vm_ram_mark_allocated(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf));
-        vm_ram_touch(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf), load_generated_dtb,
-                     gen_dtb_buf);
+        memcpy((void*)vm_paddr_to_host_vaddr(vm_config->dtb_addr), gen_dtb_buf, sizeof(gen_dtb_buf));
         dtb = vm_config->dtb_addr;
     } else if (vm_config->provide_dtb) {
         printf("Loading DTB: \'%s\'\n", vm_config->files.dtb);
