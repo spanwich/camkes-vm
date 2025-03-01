@@ -36,8 +36,9 @@ typedef struct {
         char const *initrd;
         uintptr_t initrd_size;
         char const *dtb;
-        char const *dtb_base;
-    } files;
+        void const *dtb_in;
+        void const * dtb_in_end;
+   } files;
 
     char const *kernel_bootcmdline;
     char const *kernel_stdout;

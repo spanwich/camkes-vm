@@ -49,7 +49,7 @@
 
 #define VM_INIT_DEF() \
     control; \
-    uses FileServerInterface fs; \
+    maybe uses FileServerInterface fs; \
     DEF_TK1DEVICEFWD \
     DEF_KERNELARMPLATFORM_EXYNOS5410 \
     maybe consumes restart restart_event; \
@@ -118,11 +118,9 @@
     component VM vm##num; \
 
 #define VM_COMPONENT_CONNECTIONS_DEF(num) \
-    connection seL4RPCDataport fs##num(from vm##num.fs, to fserv.fs_ctrl); \
     connection seL4GlobalAsynch notify_ready_vm##num(from vm##num.notification_ready_connector, to vm##num.notification_ready); \
 
-#define VM_GENERAL_COMPOSITION_DEF() \
-    component FileServer fserv; \
+#define VM_GENERAL_COMPOSITION_DEF()
 
 #define VM_COMPOSITION_DEF(num) \
     VM_COMPONENT_DEF(num) \

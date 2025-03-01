@@ -116,9 +116,10 @@ reboot_hooks_list_t reboot_hooks_list;
 /* So far, 320 KiB was enough for each DTB buffer. Increase if necessary. */
 #define DTB_BUFFER_SIZE (320*1024)
 char gen_dtb_buf[DTB_BUFFER_SIZE]; /* accessed by modules */
-static char gen_dtb_base_buf[DTB_BUFFER_SIZE];
 
-void *fdt_ori;
+const void *fdt_ori;
+size_t fdt_ori_size;
+// char gen_dtb_base_buf[DTB_BUFFER_SIZE];
 
 struct ps_io_ops _io_ops;
 
@@ -611,33 +612,64 @@ static int route_irqs(vm_vcpu_t *vcpu, irq_server_t *irq_server)
     irq_badge_next_free = badge;
     return 0;
 }
+
+// There's a few ways to initialize a dtb for passing into the VM:
+// 1. The simplest is to just pass a file in without modification:
+//   a. The file is passed through from the kernel boot via ps_io_fdt_get()
+//   b. The file is loaded from some file interface (eg the fs_server)
+//   c. The file is integrated into the component at compile time.
+// 2. Alternatively a device tree is generated based on VM configuration:
+//   a. The base fdt is passed through from the kernel boot via ps_io_fdt_get()
+//   b. The base fdt is loaded from some file interface (eg the fs_server)
+//   c. The base fdt is integrated into the component at compile time.
+// 3. Don't pass a DTB
+//
+// Configuration can be provided to result in one of the above options being chosen:
+// vm_config->generate_dtb
+// vm_config->provide_dtb
+//
+// ---------------------------------------------------------------------------
+//
+// This function produces the  
 static int vm_dtb_init(vm_t *vm, const vm_config_t *vm_config)
 {
     int err;
+
+    if (!vm_config->provide_dtb) {
+        // No dtb handling
+        return 0;
+    }
 
     /* Setup the base DTB. By default it's the one that CAmkES provides. */
     camkes_io_fdt(&(_io_ops.io_fdt));
     fdt_ori = (void *)ps_io_fdt_get(&_io_ops.io_fdt);
     ZF_LOGW_IF(!fdt_ori, "CAmkES did not provide a DTB");
+    fdt_ori_size = fdt_ori ? fdt_totalsize(fdt_ori) : 0;
     /* If explicitly requested, the CAmkES DTB can be ignored and one provided
      * by the file server can be used instead.
      */
-    if ((NULL != vm_config->files.dtb_base) && ('\0' != vm_config->files.dtb_base[0])) {
-        int dtb_fd = open(vm_config->files.dtb_base, 0);
-        ZF_LOGI("using DTB file '%s' as base", vm_config->files.dtb_base);
-        /* If dtb_base is in the file server, grab it and use it as a base */
-        if (dtb_fd < 0) {
-            ZF_LOGE("opening DTB file failed (%d)", dtb_fd);
-        } else {
-            size_t dtb_len = read(dtb_fd, gen_dtb_base_buf, sizeof(gen_dtb_base_buf));
-            close(dtb_fd);
-            if (dtb_len <= 0) {
-                ZF_LOGE("reading DTB file failed (%d)", dtb_len);
-            } else {
-                /* overwrite */
-                fdt_ori = gen_dtb_base_buf;
-            }
-        }
+    // if ((NULL != vm_config->files.dtb) && ('\0' != vm_config->files.dtb[0])) {
+    //     int dtb_fd = open(vm_config->files.dtb, 0);
+    //     ZF_LOGI("using DTB file '%s' as base", vm_config->files.dtb);
+    //     /* If dtb is in the file server, grab it and use it as a base */
+    //     if (dtb_fd < 0) {
+    //         ZF_LOGE("opening DTB file failed (%d)", dtb_fd);
+    //     } else {
+    //         size_t dtb_len = read(dtb_fd, vm_config->files.dtb_base, sizeof(gen_dtb_buf));
+    //         close(dtb_fd);
+    //         if (dtb_len <= 0) {
+    //             ZF_LOGE("reading DTB file failed (%d)", dtb_len);
+    //         } else {
+    //             /* overwrite */
+    //             fdt_ori = vm_config->files.dtb_base;
+    //             fdt_ori_size = dtb_len;
+    //         }
+    //     }
+    if ((NULL != vm_config->files.dtb_in) && (NULL != vm_config->files.dtb_in_end)) {
+        /* overwrite */
+        fdt_ori = vm_config->files.dtb_in;
+        fdt_ori_size = vm_config->files.dtb_in_end - vm_config->files.dtb_in;
+        dprintf(1, "FDT origin: fdt_ori: %p\n", fdt_ori);
     }
 
     /* We are done if DTB generation is not enabled. */
@@ -792,8 +824,6 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
     }
 
     if (vm_config->generate_dtb) {
-        ZF_LOGW_IF(vm_config->provide_dtb,
-                   "provide_dtb and generate_dtb are both set. The provided dtb will NOT be loaded");
         err = vm_dtb_finalize(vm, vm_config);
         if (err) {
             ZF_LOGE("Couldn't generate DTB (%d)", err);
@@ -804,16 +834,10 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
         memcpy((void*)vm_paddr_to_host_vaddr(vm_config->dtb_addr), gen_dtb_buf, sizeof(gen_dtb_buf));
         dtb = vm_config->dtb_addr;
     } else if (vm_config->provide_dtb) {
-        printf("Loading DTB: \'%s\'\n", vm_config->files.dtb);
-
-        /* Load device tree */
-        guest_image_t dtb_image;
-        err = vm_load_guest_module(vm, vm_config->files.dtb,
-                                   vm_config->dtb_addr, 0, &dtb_image);
-        dtb = dtb_image.load_paddr;
-        if (!dtb || err) {
-            return -1;
-        }
+        fdt_dump_blob(fdt_ori);
+        printf("Loading provided DTB\n");
+        memcpy((void*)vm_paddr_to_host_vaddr(vm_config->dtb_addr), fdt_ori, fdt_ori_size);
+        dtb = fdt_ori;
     } else {
         ZF_LOGW("%s not given a DTB - This may be appropriate for your guest, but it " \
                 "may also break things!", get_instance_name());
@@ -1016,7 +1040,7 @@ static int main_continued(void)
 
     /* install custom open/close/read implementations to redirect I/O from the VMM to
      * our file server */
-    install_fileserver(FILE_SERVER_INTERFACE(fs));
+    // install_fileserver(FILE_SERVER_INTERFACE(fs));
     err = seL4_TCB_BindNotification(camkes_get_tls()->tcb_cap, notification_ready_notification());
     assert(!err);
 

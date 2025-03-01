@@ -8,6 +8,18 @@
 #include <camkes.h>
 #include <arm_vm/gen_config.h>
 
+#define INLINE_BINARY(sym_name, filename)   \
+  extern const void* sym_name;       \
+  extern const void* sym_name##_end; \
+  asm(                                 \
+    ".section .rodata,\"a\" \n \
+.globl " #sym_name ", " #sym_name      \
+    "_end \n \
+.balign 0x1000 \n \
+" #sym_name ": \n \
+.incbin \"" #filename "\" \n \
+" #sym_name "_end: \n");
+
 /*- set config = configuration[me.name] -*/
 /*- if not config -*/
   /*? raise(Exception('Missing VM configuration')) ?*/
@@ -21,6 +33,23 @@
 /*# For legacy compatibility, a fall back to the standard Linux entry exists. #*/
 /*- set is_64_bit = (8 == macros.get_word_size(options.architecture)) -*/
 /*- set entry_offset = 0x80000 if is_64_bit else 0x8000 -*/
+
+/*- set dtb_base_sym = "NULL" -*/
+/*- set dtb_base_end = "NULL" -*/
+/*- if vm_image_config -*/
+/*- if 'dtb_base_name' in vm_image_config  -*/
+INLINE_BINARY(gen_dtb_base_buf, /*? vm_image_config.get('dtb_base_name', "") ?*/);
+/*- set dtb_base_sym = "&gen_dtb_base_buf" -*/
+/*- set dtb_base_end = "&gen_dtb_base_buf_end" -*/
+/*- endif -*/
+/*- else -*/
+/*- if linux_image_config.get('dtb_base_name', "") != ""  -*/
+INLINE_BINARY(gen_dtb_base_buf, /*? linux_image_config.get('dtb_base_name', "") ?*/);
+
+/*- endif -*/
+/*- endif -*/
+
+
 
 const vm_config_t vm_config = {
 
@@ -75,7 +104,8 @@ const vm_config_t vm_config = {
         .initrd = "/*? vm_image_config.get('initrd_name', "") ?*/",
         .initrd_size = /*? vm_image_config.get('initrd_size') ?*/,
         .dtb = "/*? vm_image_config.get('dtb_name', "") ?*/",
-        .dtb_base = "/*? vm_image_config.get('dtb_base_name', "") ?*/",
+        .dtb_in = /*? dtb_base_sym ?*/,
+        .dtb_in_end = /*? dtb_base_end ?*/
     },
 
     .kernel_bootcmdline = "/*? vm_image_config.get('kernel_bootcmdline', "") ?*/",
@@ -99,7 +129,7 @@ const vm_config_t vm_config = {
     .provide_dtb = 1,
     .generate_dtb = 0,
 #else
-    .provide_dtb = 0,
+    .provide_dtb = 1,
     .generate_dtb = 1,
 #endif
 
@@ -119,7 +149,8 @@ const vm_config_t vm_config = {
         .kernel = "/*? linux_image_config.get('linux_name') ?*/",
         .initrd = "/*? linux_image_config.get('initrd_name') ?*/",
         .dtb = "/*? linux_image_config.get('dtb_name') ?*/",
-        .dtb_base = "/*? linux_image_config.get('dtb_base_name') ?*/",
+        .dtb_in = /*? dtb_base_sym ?*/,
+        .dtb_in_end = /*? dtb_base_end ?*/,
         .kernel_size = /*? linux_image_config.get('linux_image_size') ?*/,
         .initrd_size = /*? linux_image_config.get('initrd_size') ?*/,
     },

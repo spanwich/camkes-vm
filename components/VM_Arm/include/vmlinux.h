@@ -18,7 +18,7 @@
 #define FREE_IOPORT_START    0x1000
 
 extern char gen_dtb_buf[];
-extern void *fdt_ori;
+extern const void *fdt_ori;
 
 irq_callback_fn_t get_custom_irq_handler(ps_irq_t irq) WEAK;
 
