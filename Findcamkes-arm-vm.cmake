@@ -23,6 +23,19 @@ macro(camkes_arm_vm_import_project)
         seL4VMDTBPassthrough-to.template.c
     )
 
+    DeclareCAmkESConnector(
+        seL4MultikernelInterconnect
+        FROM
+        seL4MultikernelInterconnect.template.c
+        TO
+        seL4MultikernelInterconnect.template.c
+        FROM_HEADER
+        seL4MultikernelInterconnect.template.h
+        TO_HEADER
+        seL4MultikernelInterconnect.template.h
+    )
+
+
     # Add libraries
     add_subdirectory(${CAMKES_ARM_VM_DIR}/libs/libvirtio camkes-arm-vm/libs/libvirtio)
 

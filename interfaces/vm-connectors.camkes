@@ -23,3 +23,10 @@ connector seL4VMDTBPassthrough {
             access_to_conn   = {}
         \<rparr> \<rparr>";
 }
+
+connector seL4MultikernelInterconnect {
+    from Dataports with 0 threads;
+    to Dataports with 0 threads;
+    attribute bool from_global_endpoint = True;
+    attribute bool to_global_endpoint = True;
+}
