@@ -99,10 +99,10 @@ const vm_config_t vm_config = {
     .clean_cache = /*? vm_image_config.get('clean_cache') ?*/,
 
     .files = {
-        .kernel = "/*? vm_image_config.get('kernel_name') ?*/",
-        .kernel_size = /*? vm_image_config.get('kernel_image_size') ?*/,
+        .kernel = "/*? vm_image_config.get('kernel_name', "") ?*/",
+        .kernel_size = /*? vm_image_config.get('kernel_image_size', 0) ?*/,
         .initrd = "/*? vm_image_config.get('initrd_name', "") ?*/",
-        .initrd_size = /*? vm_image_config.get('initrd_size') ?*/,
+        .initrd_size = /*? vm_image_config.get('initrd_size', 0) ?*/,
         .dtb = "/*? vm_image_config.get('dtb_name', "") ?*/",
         .dtb_in = /*? dtb_base_sym ?*/,
         .dtb_in_end = /*? dtb_base_end ?*/
