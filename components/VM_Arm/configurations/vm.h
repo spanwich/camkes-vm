@@ -69,6 +69,7 @@
     attribute int num_extra_frame_caps; \
     attribute int extra_frame_map_address; \
     attribute int heap_size = 0x200000; \
+    attribute int vm_id = -1; \
     attribute uint64_t global_endpoint_mask = 0; \
     attribute { \
         string ram_base; \

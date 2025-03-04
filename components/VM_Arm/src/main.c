@@ -1071,6 +1071,7 @@ static int main_continued(void)
     /* Create the VM */
     err = vm_init(&vm, &_vka, &_simple, _vspace, &_io_ops, _fault_endpoint, get_instance_name());
     assert(!err);
+    vm.vm_id = vm_id;
     err = vm_register_unhandled_mem_fault_callback(&vm, unhandled_mem_fault_callback, NULL);
     assert(!err);
     err = vm_register_notification_callback(&vm, handle_async_event, NULL);
