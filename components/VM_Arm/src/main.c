@@ -797,8 +797,9 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
 
     /* generate a chosen node */
     if (vm_config->generate_dtb) {
+        int num_cpus = vm->is_multikernel ? vm->num_multikernel_vcpus : NUM_VCPUS;
         err = fdt_generate_chosen_node(gen_dtb_buf, vm_config->kernel_stdout,
-                                       vm_config->kernel_bootcmdline, NUM_VCPUS);
+                                       vm_config->kernel_bootcmdline, num_cpus);
         if (err) {
             ZF_LOGE("Couldn't generate chosen_node (%d)", err);
             return -1;
@@ -1022,6 +1023,81 @@ int vm_smc_handler(vm_vcpu_t *vcpu, seL4_UserContext *regs)
 }
 #endif
 
+
+#ifdef IQ_HAVE_INTERFACE
+
+void send_message(int src_id, int dst_id, uint32_t type, uint32_t value, void *_cookie) {
+    struct {uint32_t type; uint32_t value;} foo = {type, value};
+    struct iq_mq_buf msg;
+    memcpy(&msg, &foo, sizeof(foo));
+    iq_multikernel_enqueue_msg((struct iq_mem_tport *) iq_multikernel, src_id, dst_id, &msg);
+    seL4_Signal(iq_multikernel_get_signal_cap(dst_id));
+}
+
+
+void start_secondary_cpu(vm_t *vm, uint32_t boot_addr) {
+
+    vm_vcpu_t *vm_vcpu = vm->vcpus[BOOT_VCPU];
+
+    int err = vcpu_set_bootargs(vm_vcpu, boot_addr, MACH_TYPE, 0);
+    if (err) {
+        ZF_LOGE("Failed to init Boot VCPU");
+        return;
+    }
+
+    err = vcpu_start(vm_vcpu);
+    if (err) {
+        ZF_LOGE("Failed to start Boot VCPU");
+        return;
+    }
+}
+int vm_enable_irq(vm_vcpu_t *vcpu, int irq);
+
+
+void handle_msg(vm_t *vm, uint32_t type, uint32_t value) {
+    uint32_t msg_type = type;
+
+    switch (msg_type) {
+    case START_CORE: 
+        start_secondary_cpu(vm, (value));
+        return;
+    case INJECT_SGI:
+        vm_inject_irq(vm->vcpus[0], value);
+        return;
+    case REMOTE_ENABLE_IRQ:
+        vm_enable_irq(vm->vcpus[0], value);
+        return;
+    default: 
+        ZF_LOGF("%d: Unsupported message: %d %x", vm->vm_id, msg_type, value);
+    }
+
+}
+
+int iq_interconnect_event(vm_t *vm, void *cookie) {
+    // We are the destination
+    int dst_id = vm->vm_id;
+    int i;
+    struct iq_mq_queue *iq_mq_queue;
+    // Loop over our incoming queues:
+    iq_node_foreach_queue((struct iq_mem_tport *) iq_multikernel, dst_id, i, iq_mq_queue) {
+        // Skip ourself
+        if (i == dst_id) continue;
+        // Process any available events
+        iq_mq_queue_while_msg((struct iq_mem_tport *) iq_multikernel, i, dst_id) {
+            int j = iq_node_counter_rx((struct iq_mem_tport *) iq_multikernel, i, dst_id);
+            struct iq_mq_buf msg = iq_node_queue_slot((struct iq_mem_tport *) iq_multikernel, i, dst_id, j%MQ_QUEUE_LEN);
+            iq_node_counter_rx((struct iq_mem_tport *) iq_multikernel, i, dst_id) = j + 1;
+            struct {uint32_t type; uint32_t value;} foo;
+            memcpy(&foo, &msg, sizeof(foo));
+            handle_msg(vm, foo.type, foo.value);
+
+        }
+
+    }
+    return 0;
+}
+#endif
+
 static int main_continued(void)
 {
     vm_t vm;
@@ -1076,6 +1152,11 @@ static int main_continued(void)
     assert(!err);
     err = vm_register_notification_callback(&vm, handle_async_event, NULL);
     assert(!err);
+#ifdef IQ_HAVE_INTERFACE
+    // We are a multikernel VM instance, so make some config changes to the vm
+    err = vm_register_multikernel_send_message_callback(&vm, vm_id, MQ_NUM_NODES, send_message, NULL);
+    assert(!err);
+#endif
 
     /* basic configuration flags */
     vm.entry = vm_config.entry_addr;
@@ -1125,7 +1206,7 @@ static int main_continued(void)
         vm_vcpu_t *new_vcpu = create_vmm_plat_vcpu(&vm, VM_PRIO - 1);
         assert(new_vcpu);
     }
-    if (vm_config.generate_dtb) {
+    if (vm_config.generate_dtb && !vm.is_multikernel) {
         err = fdt_generate_plat_vcpu_node(&vm, gen_dtb_buf);
         if (err) {
             ZF_LOGE("Couldn't generate plat_vcpu_node (%d)", err);
@@ -1153,16 +1234,29 @@ static int main_continued(void)
     }
 
     /* Load system images */
-    err = load_vm_images(&vm, &vm_config);
-    if (err) {
-        ZF_LOGE("Failed to load VM image");
-        return -1;
+    if (!vm.is_multikernel || vm_id == 0) {
+        err = load_vm_images(&vm, &vm_config);
+        if (err) {
+            ZF_LOGE("Failed to load VM image");
+            return -1;
+        }
     }
 
-    err = vcpu_start(vm_vcpu);
-    if (err) {
-        ZF_LOGE("Failed to start Boot VCPU");
-        return -1;
+#ifdef IQ_HAVE_INTERFACE
+    if (iq_multikernel_notification_badge) {
+        register_async_event_handler(iq_multikernel_notification_badge(), iq_interconnect_event, NULL);
+    }
+#endif
+
+    if (!vm.is_multikernel || vm_id == 0) {
+#ifdef IQ_HAVE_INTERFACE
+        iq_multikernel_init();
+#endif
+        err = vcpu_start(vm_vcpu);
+        if (err) {
+            ZF_LOGE("Failed to start Boot VCPU");
+            return -1;
+        }
     }
 
     while (1) {

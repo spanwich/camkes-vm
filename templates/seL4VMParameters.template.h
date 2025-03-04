@@ -22,6 +22,7 @@ typedef struct {
 
     bool provide_initrd;
     bool generate_dtb;
+    bool generate_plat_cpu_node;
     bool provide_dtb;
     bool map_one_to_one;
     bool clean_cache;
