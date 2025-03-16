@@ -830,15 +830,15 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
             ZF_LOGE("Couldn't generate DTB (%d)", err);
             return -1;
         }
-        fdt_dump_blob(gen_dtb_buf);
+        // fdt_dump_blob(gen_dtb_buf);
         printf("Loading Generated DTB\n");
         memcpy((void*)vm_paddr_to_host_vaddr(vm_config->dtb_addr), gen_dtb_buf, sizeof(gen_dtb_buf));
-        dtb = vm_config->dtb_addr;
+        dtb = (uintptr_t) vm_config->dtb_addr;
     } else if (vm_config->provide_dtb) {
-        fdt_dump_blob(fdt_ori);
+        // fdt_dump_blob(fdt_ori);
         printf("Loading provided DTB\n");
         memcpy((void*)vm_paddr_to_host_vaddr(vm_config->dtb_addr), fdt_ori, fdt_ori_size);
-        dtb = fdt_ori;
+        dtb = (uintptr_t) fdt_ori;
     } else {
         ZF_LOGW("%s not given a DTB - This may be appropriate for your guest, but it " \
                 "may also break things!", get_instance_name());

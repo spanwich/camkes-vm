@@ -22,7 +22,7 @@
 /*# Grab the DTB object made from the previous stages of the parsing #*/
 /*- set configuration_name = '%s.%s' % (me.instance.name, me.interface.name) -*/
 /*- set dtb_query = configuration[me.instance.name].get('dtb') -*/
-/*- set dtb = dtb_query.get('query') -*/
+/*- set dtb = dtb_query.get('query') if dtb_query else [] -*/
 
 /*- set untyped_dtb_mmio = [] -*/
 /*- set dtb_irqs_map = {} -*/
