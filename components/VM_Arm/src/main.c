@@ -1154,7 +1154,9 @@ static int main_continued(void)
     assert(!err);
 #ifdef IQ_HAVE_INTERFACE
     // We are a multikernel VM instance, so make some config changes to the vm
-    err = vm_register_multikernel_send_message_callback(&vm, vm_id, MQ_NUM_NODES, send_message, NULL);
+    // Calculate next address for pool of shared memory for vmm modules to allocate from.
+    void *next_addr = (void*)ROUND_UP((uintptr_t)(((struct iq_mem_tport*)iq_multikernel)+1), 4096);
+    err = vm_register_multikernel_send_message_callback(&vm, vm_id, MQ_NUM_NODES, IQ_ADDITIONAL_SIZE, next_addr, send_message, NULL);
     assert(!err);
 #endif
 

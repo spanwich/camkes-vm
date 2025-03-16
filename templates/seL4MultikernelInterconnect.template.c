@@ -17,7 +17,10 @@
 /*- set cache_line_size = 64 -*/
 /*- set counter_size = 4 -*/
 /*- set iq_mem_tport_size = (2 * cache_line_size * mq_num_nodes * mq_num_nodes) + (mq_queue_len * cache_line_size * mq_num_nodes * mq_num_nodes) -*/
-/*- set dataport_size = macros.ROUND_UP(iq_mem_tport_size, 4096) -*/
+/*- set additional_size = configuration[me.parent.name].get('extra_len', 0x0) -*/
+/*- set additional_size = macros.ROUND_UP(additional_size, 4096) -*/
+/*- set iq_size = macros.ROUND_UP(iq_mem_tport_size, 4096) -*/
+/*- set dataport_size = iq_size + additional_size -*/
 
 
 
