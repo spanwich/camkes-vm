@@ -51,6 +51,7 @@
 #include <sel4vmmplatsupport/arch/guest_vcpu_fault.h>
 #include <sel4vmmplatsupport/guest_vcpu_util.h>
 #include <sel4vmmplatsupport/arch/smc.h>
+#include <sel4vmmplatsupport/plat/devices.h>
 
 #include <sel4utils/process.h>
 #include <sel4utils/irq_server.h>
@@ -1066,6 +1067,9 @@ void handle_msg(vm_t *vm, uint32_t type, uint32_t value) {
         return;
     case REMOTE_ENABLE_IRQ:
         vm_enable_irq(vm->vcpus[0], value);
+        return;
+    case FLUSH_TX_QUEUE:
+        vuart_flush_tx();
         return;
     default: 
         ZF_LOGF("%d: Unsupported message: %d %x", vm->vm_id, msg_type, value);
