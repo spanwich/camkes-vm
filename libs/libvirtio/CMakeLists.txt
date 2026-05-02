@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
-cmake_minimum_required(VERSION 3.8.2)
+cmake_minimum_required(VERSION 3.16.0)
 
 project(libvirtio C)
 
@@ -16,4 +16,12 @@ add_library(virtioarm STATIC EXCLUDE_FROM_ALL ${sources})
 
 target_include_directories(virtioarm PUBLIC include plat_include/${KernelPlatform})
 
-target_link_libraries(virtioarm muslc sel4 sel4camkes sel4vm sel4vmmplatsupport sel4_autoconf)
+target_link_libraries(
+    virtioarm
+    muslc
+    sel4
+    sel4camkes
+    sel4vm
+    sel4vmmplatsupport
+    sel4_autoconf
+)
