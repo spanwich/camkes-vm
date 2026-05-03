@@ -1069,7 +1069,9 @@ void handle_msg(vm_t *vm, uint32_t type, uint32_t value) {
         vm_enable_irq(vm->vcpus[0], value);
         return;
     case FLUSH_TX_QUEUE:
+#ifdef CONFIG_PLAT_ZYNQMP
         vuart_flush_tx();
+#endif
         return;
     default: 
         ZF_LOGF("%d: Unsupported message: %d %x", vm->vm_id, msg_type, value);
